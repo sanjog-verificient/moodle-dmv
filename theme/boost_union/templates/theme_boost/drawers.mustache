@@ -83,8 +83,41 @@
             {{/drawerheadercontent}}
             {{$drawerclasses}}drawer drawer-left {{#courseindexopen}}show{{/courseindexopen}}{{/drawerclasses}}
             {{$drawercontent}}
-                {{{courseindex}}}
-            {{/drawercontent}}
+
+ <!-- 🔹 Custom banner and description for Course Index -->
+    <div class="courseindex-banner mb-3">
+        <img src="{{config.wwwroot}}/theme/boost_union/pix/car2.png"
+             alt="Course Banner"
+             class="w-100 rounded shadow-sm mb-2">
+        <p class="text-center text-muted mb-2">
+            This course is made up of lessons that are critical to renew your driver’s license.
+        </p>
+    </div>
+
+    <!-- Menu / Transcript Tabs -->
+    <div class="courseindex-tabs-wrapper">
+
+        <div class="courseindex-tabs">
+            <button type="button" class="ci-tab active" data-tab="menu">Menu</button>
+            <button type="button" class="ci-tab" data-tab="transcript">Transcript</button>
+        </div>
+
+        <div id="ci-menu" class="ci-tab-content active">
+            {{{courseindex}}}
+        </div>
+
+        <div id="ci-transcript" class="ci-tab-content">
+            <div class="ci-transcript-content">
+                <p class="text-muted">
+                    Transcript will appear here for video activities.
+                </p>
+            </div>
+        </div>
+
+    </div>       
+    
+    {{/drawercontent}}
+    
             {{$drawerpreferencename}}drawer-open-index{{/drawerpreferencename}}
             {{$drawerstate}}show-drawer-left{{/drawerstate}}
             {{$tooltipplacement}}right{{/tooltipplacement}}
@@ -318,6 +351,161 @@
 M.util.js_pending('theme_boost/loader');
 require(['theme_boost/loader', 'theme_boost/drawer'{{#regions.offcanvas.hasblocks}},'theme_boost_union/offcanvas'{{/regions.offcanvas.hasblocks}}{{#includesmartmenu}}, 'theme_boost_union/smartmenu'{{/includesmartmenu}}], function(Loader, Drawer{{#regions.offcanvas.hasblocks}},OffCanvas{{/regions.offcanvas.hasblocks}}{{#includesmartmenu}}, SmartMenu{{/includesmartmenu}}) {
     Drawer.init();
+  // ==========================
+    // Menu / Transcript Tabs
+    // ==========================
+    document.addEventListener('click', function(e) {
+
+        if (!e.target.classList.contains('ci-tab')) return;
+
+        const tab = e.target.dataset.tab;
+
+        document.querySelectorAll('.ci-tab').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.ci-tab-content').forEach(content => content.classList.remove('active'));
+
+        e.target.classList.add('active');
+
+        const target = document.getElementById('ci-' + tab);
+        if (target) target.classList.add('active');
+    });
+
+
+    // ==========================
+    // ✅ LOAD TRANSCRIPT FROM VTT FILE
+    // ==========================
+
+    // ==========================
+// 🔥 ADVANCED AUTO-SYNC TRANSCRIPT
+// ==========================
+
+// Convert VTT timestamp to seconds
+function parseTime(timeString) {
+    const parts = timeString.split(':');
+    return (
+        parseFloat(parts[2]) +
+        parseInt(parts[1]) * 60 +
+        parseInt(parts[0]) * 3600
+    );
+}
+
+// Recursively find video inside nested iframes
+function findVideoDeep(doc) {
+
+    const video = doc.querySelector('video');
+    if (video) return video;
+
+    const iframes = doc.querySelectorAll('iframe');
+
+    for (let frame of iframes) {
+        try {
+            const innerDoc = frame.contentDocument || frame.contentWindow.document;
+            const found = findVideoDeep(innerDoc);
+            if (found) return found;
+        } catch (e) {}
+    }
+
+    return null;
+}
+
+function loadTranscript() {
+
+    const container = document.querySelector('.ci-transcript-content');
+    if (!container) return;
+
+    fetch(M.cfg.wwwroot + '/assets/ai-captions-1771396249669.vtt')
+    .then(res => res.text())
+    .then(text => {
+
+        const lines = text.split('\n');
+        const cues = [];
+        let currentCue = null;
+
+        lines.forEach(line => {
+
+            const trimmed = line.trim();
+
+            if (trimmed.includes('-->')) {
+
+                const times = trimmed.split('-->');
+                const start = parseTime(times[0].trim());
+                const end = parseTime(times[1].trim());
+
+                currentCue = { start, end, text: '' };
+                cues.push(currentCue);
+
+            } 
+            else if (
+                trimmed &&
+                trimmed !== 'WEBVTT' &&
+                !/^\d+$/.test(trimmed)
+            ) {
+                if (currentCue) {
+                    currentCue.text += ' ' + trimmed;
+                }
+            }
+        });
+
+        // Render transcript
+        container.innerHTML = '';
+
+        cues.forEach(cue => {
+
+            const p = document.createElement('p');
+            p.className = 'transcript-line';
+            p.dataset.start = cue.start;
+            p.dataset.end = cue.end;
+            p.textContent = cue.text.trim();
+
+            container.appendChild(p);
+        });
+
+        // Attach video sync after transcript ready
+        attachVideoSync();
+    });
+}
+
+function attachVideoSync() {
+
+    const interval = setInterval(() => {
+
+        const video = findVideoDeep(document);
+        if (!video) return;
+
+        clearInterval(interval);
+
+        video.addEventListener('timeupdate', function () {
+
+            const currentTime = video.currentTime;
+
+            document.querySelectorAll('.transcript-line').forEach(line => {
+
+                const start = parseFloat(line.dataset.start);
+                const end = parseFloat(line.dataset.end);
+
+                if (currentTime >= start && currentTime <= end) {
+
+                    if (!line.classList.contains('active')) {
+
+                        document.querySelectorAll('.transcript-line')
+                            .forEach(l => l.classList.remove('active'));
+
+                        line.classList.add('active');
+
+                        // Auto-scroll
+                        line.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center'
+                        });
+                    }
+                }
+            });
+        });
+
+    }, 800); // check every 800ms
+}
+
+loadTranscript();
+
     M.util.js_complete('theme_boost/loader');
 {{#regions.offcanvas.hasblocks}}OffCanvas.init();{{/regions.offcanvas.hasblocks}}
 {{#includesmartmenu}}SmartMenu.init();{{/includesmartmenu}}
